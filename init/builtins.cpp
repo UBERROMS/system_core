@@ -606,10 +606,12 @@ static int do_setprop(const std::vector<std::string>& args) {
 static int do_setrlimit(const std::vector<std::string>& args) {
     struct rlimit limit;
     int resource;
-    resource = std::stoi(args[1]);
-    limit.rlim_cur = std::stoi(args[2]);
-    limit.rlim_max = std::stoi(args[3]);
-    return setrlimit(resource, &limit);
+    if (android::base::ParseInt(args[1], &resource) &&
+        android::base::ParseUint(args[2], &limit.rlim_cur) &&
+        android::base::ParseUint(args[3], &limit.rlim_max)) {
+        return setrlimit(resource, &limit);
+    }
+    return -1;
 }
 
 static int do_start(const std::vector<std::string>& args) {
@@ -678,7 +680,7 @@ static int do_powerctl(const std::vector<std::string>& args) {
     std::string timeout = property_get("ro.build.shutdown_timeout");
     unsigned int delay = 0;
 
-    if (android::base::ParseUint(timeout.c_str(), &delay) && delay > 0) {
+    if (android::base::ParseUint(timeout, &delay) && delay > 0) {
         Timer t;
         // Ask all services to terminate.
         ServiceManager::GetInstance().ForEachService(
@@ -733,13 +735,11 @@ static int do_rmdir(const std::vector<std::string>& args) {
 }
 
 static int do_sysclktz(const std::vector<std::string>& args) {
-    struct timezone tz;
-
-    memset(&tz, 0, sizeof(tz));
-    tz.tz_minuteswest = std::stoi(args[1]);
-    if (settimeofday(NULL, &tz))
-        return -1;
-    return 0;
+    struct timezone tz = {};
+    if (android::base::ParseInt(args[1], &tz.tz_minuteswest) && settimeofday(NULL, &tz) != -1) {
+        return 0;
+    }
+    return -1;
 }
 
 static int do_verity_load_state(const std::vector<std::string>& args) {
@@ -886,7 +886,8 @@ static int do_restorecon_recursive(const std::vector<std::string>& args) {
 }
 
 static int do_loglevel(const std::vector<std::string>& args) {
-    int log_level = std::stoi(args[1]);
+    int log_level = -1;
+    android::base::ParseInt(args[1], &log_level);
     if (log_level < KLOG_ERROR_LEVEL || log_level > KLOG_DEBUG_LEVEL) {
         ERROR("loglevel: invalid log level'%d'\n", log_level);
         return -EINVAL;
@@ -909,9 +910,12 @@ static int do_wait(const std::vector<std::string>& args) {
     if (args.size() == 2) {
         return wait_for_file(args[1].c_str(), COMMAND_RETRY_TIMEOUT);
     } else if (args.size() == 3) {
-        return wait_for_file(args[1].c_str(), std::stoi(args[2]));
-    } else
-        return -1;
+        int timeout;
+        if (android::base::ParseInt(args[2], &timeout)) {
+            return wait_for_file(args[1].c_str(), timeout);
+        }
+    }
+    return -1;
 }
 
 /*
